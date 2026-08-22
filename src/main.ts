@@ -1,4 +1,5 @@
 import './style.css';
+import { measurePacketLoss } from './engine/packet-loss';
 import type {
   ResultMessage,
   SampleMessage,
@@ -482,6 +483,11 @@ worker.addEventListener('message', (ev: MessageEvent) => {
       break;
     case 'phase':
       setPhase(msg.phase);
+      break;
+    case 'measure-loss':
+      void measurePacketLoss().then((packetLossPercent) =>
+        worker.postMessage({ type: 'loss-result', packetLossPercent }),
+      );
       break;
     case 'sample':
       onSample(msg);

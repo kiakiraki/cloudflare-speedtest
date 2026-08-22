@@ -14,7 +14,7 @@ Cloudflare Workers app that serves a vanilla TypeScript browser speed test (Vite
 ## Architecture
 
 - `src/main.ts` – client entry (loaded by root `index.html`): DOM UI, canvas chart, score display.
-- `src/engine/engine.worker.ts` – Web Worker running the measurement phases (latency → loss → download → upload) against `speed.cloudflare.com` (or `h3.speed.cloudflare.com` when host=h3). Packet loss uses a TURN-relayed WebRTC data channel with credentials fetched from `POST /api/turn-credentials`.
+- `src/engine/engine.worker.ts` – Web Worker running the measurement phases (latency → loss → download → upload) against `speed.cloudflare.com` (or `h3.speed.cloudflare.com` when host=h3). Packet loss runs on the main thread in `src/engine/packet-loss.ts` (RTCPeerConnection is not available inside workers); the engine worker delegates to it via the `measure-loss` / `loss-result` protocol messages, with TURN credentials still fetched from `POST /api/turn-credentials`.
 - `src/engine/protocol.ts` – shared message contract between main thread and engine worker.
 - `src/score.ts` – pure scoring math (grades S–E).
 - `src/worker.ts` – Worker entry (per wrangler.jsonc): serves static assets from `dist/` via the ASSETS binding plus the single API endpoint above (origin check + in-memory per-IP rate limiting).
