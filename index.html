@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Speedtest | Cloudflare Edge</title>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <h1>Speedtest</h1>
+        <p class="subtitle">Cloudflare Edge 計測</p>
+      </header>
+
+      <section class="card stepper" aria-label="測定フェーズ">
+        <ol id="phaseList">
+          <li data-phase="idle">待機</li>
+          <li data-phase="latency">レイテンシ</li>
+          <li data-phase="loss">パケットロス</li>
+          <li data-phase="download">ダウンロード</li>
+          <li data-phase="upload">アップロード</li>
+          <li data-phase="done">完了</li>
+        </ol>
+      </section>
+
+      <section class="card speed-panel">
+        <div class="live-metrics">
+          <div class="live-metric dl">
+            <span class="dir-label">↓ ダウンロード</span>
+            <div class="metric-line">
+              <span class="speed-num" id="dlNum">--</span>
+              <span class="speed-unit" id="dlUnit"></span>
+            </div>
+          </div>
+          <div class="live-metric ul">
+            <span class="dir-label">↑ アップロード</span>
+            <div class="metric-line">
+              <span class="speed-num" id="ulNum">--</span>
+              <span class="speed-unit" id="ulUnit"></span>
+            </div>
+          </div>
+        </div>
+        <canvas id="graph" aria-label="リアルタイム速度グラフ"></canvas>
+      </section>
+
+      <section class="card controls">
+        <div class="control-group">
+          <span class="control-label">測定時間</span>
+          <div class="segmented" role="radiogroup" aria-label="測定時間">
+            <label><input type="radio" name="duration" value="6" /><span>6秒 簡易</span></label>
+            <label><input type="radio" name="duration" value="12" checked /><span>12秒 標準</span></label>
+            <label><input type="radio" name="duration" value="30" /><span>30秒 精密</span></label>
+          </div>
+        </div>
+        <div class="control-group">
+          <span class="control-label">プロトコル</span>
+          <div class="segmented" role="radiogroup" aria-label="測定プロトコル">
+            <label><input type="radio" name="proto" value="auto" checked /><span>自動</span></label>
+            <label><input type="radio" name="proto" value="h3" /><span>HTTP/3 (QUIC)</span></label>
+          </div>
+        </div>
+        <button class="primary" id="startBtn" type="button">測定開始</button>
+      </section>
+
+      <p class="status" id="statusText" role="status"></p>
+
+      <section class="results" id="results" hidden>
+        <div class="card score-card">
+          <div class="score-ring-wrap">
+            <svg viewBox="0 0 120 120" class="score-ring" aria-hidden="true">
+              <defs>
+                <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#4f8cff" />
+                  <stop offset="100%" stop-color="#34d97b" />
+                </linearGradient>
+              </defs>
+              <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(148,163,184,0.15)" stroke-width="10" />
+              <circle
+                id="scoreRing"
+                cx="60"
+                cy="60"
+                r="52"
+                fill="none"
+                stroke="url(#ringGrad)"
+                stroke-width="10"
+                stroke-linecap="round"
+                stroke-dasharray="326.73"
+                stroke-dashoffset="326.73"
+                transform="rotate(-90 60 60)"
+              />
+            </svg>
+            <div class="score-center">
+              <span class="score-total" id="scoreTotal">--</span>
+              <span class="score-grade" id="scoreGrade"></span>
+            </div>
+          </div>
+          <dl class="score-breakdown">
+            <div class="score-row">
+              <dt>ダウンロード</dt>
+              <dd><div class="score-bar"><div class="score-fill fill-dl" id="fillDownload"></div></div></dd>
+              <span class="score-val" id="valDownload">--</span>
+            </div>
+            <div class="score-row">
+              <dt>アップロード</dt>
+              <dd><div class="score-bar"><div class="score-fill fill-ul" id="fillUpload"></div></div></dd>
+              <span class="score-val" id="valUpload">--</span>
+            </div>
+            <div class="score-row">
+              <dt>レイテンシ</dt>
+              <dd><div class="score-bar"><div class="score-fill fill-latency" id="fillLatency"></div></div></dd>
+              <span class="score-val" id="valLatency">--</span>
+            </div>
+            <div class="score-row">
+              <dt>ジッター</dt>
+              <dd><div class="score-bar"><div class="score-fill fill-jitter" id="fillJitter"></div></div></dd>
+              <span class="score-val" id="valJitter">--</span>
+            </div>
+            <div class="score-row">
+              <dt>安定性</dt>
+              <dd><div class="score-bar"><div class="score-fill fill-stability" id="fillStability"></div></div></dd>
+              <span class="score-val" id="valStability">--</span>
+            </div>
+            <div class="score-row">
+              <dt>パケットロス</dt>
+              <dd><div class="score-bar"><div class="score-fill fill-pl" id="fillPacketLoss"></div></div></dd>
+              <span class="score-val" id="valPacketLoss">--</span>
+            </div>
+          </dl>
+        </div>
+        <div class="card-grid">
+          <div class="card metric dl">
+            <span class="metric-label">ダウンロード ピーク</span>
+            <span class="metric-value" id="dlPeak">--</span>
+          </div>
+          <div class="card metric dl">
+            <span class="metric-label">ダウンロード 持続</span>
+            <span class="metric-value" id="dlSust">--</span>
+          </div>
+          <div class="card metric ul">
+            <span class="metric-label">アップロード ピーク</span>
+            <span class="metric-value" id="ulPeak">--</span>
+          </div>
+          <div class="card metric ul">
+            <span class="metric-label">アップロード 持続</span>
+            <span class="metric-value" id="ulSust">--</span>
+          </div>
+          <div class="card metric">
+            <span class="metric-label">レイテンシ</span>
+            <span class="metric-value" id="latVal">--</span>
+          </div>
+          <div class="card metric">
+            <span class="metric-label">ジッター</span>
+            <span class="metric-value" id="jitVal">--</span>
+          </div>
+          <div class="card metric">
+            <span class="metric-label">パケットロス</span>
+            <span class="metric-value" id="lossVal">--</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card conn" aria-label="接続情報">
+        <h2>接続情報</h2>
+        <dl class="conn-grid">
+          <div class="conn-item">
+            <dt>データセンター</dt>
+            <dd id="infoColo">--</dd>
+          </div>
+          <div class="conn-item">
+            <dt>ISP</dt>
+            <dd id="infoIsp">--</dd>
+          </div>
+          <div class="conn-item">
+            <dt>IPアドレス</dt>
+            <dd id="infoIp">--</dd>
+          </div>
+          <div class="conn-item">
+            <dt>プロトコル</dt>
+            <dd id="infoProto">--</dd>
+          </div>
+        </dl>
+      </section>
+
+      <footer>Powered by speed.cloudflare.com</footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
