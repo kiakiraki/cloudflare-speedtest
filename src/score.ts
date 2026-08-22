@@ -34,9 +34,13 @@ export function computeScore(input: ScoreInput): ScoreResult {
   const latency = linearScale(input.latencyMs, 5, 150);
   const jitter = linearScale(input.jitterMs, 1, 40);
   const stability =
-    input.stabilityCvPercent === null ? null : linearScale(input.stabilityCvPercent, 8, 50);
+    input.stabilityCvPercent === null
+      ? null
+      : linearScale(input.stabilityCvPercent, 8, 50);
   const packetLoss =
-    input.packetLossPercent === null ? null : linearScale(input.packetLossPercent, 0, 3);
+    input.packetLossPercent === null
+      ? null
+      : linearScale(input.packetLossPercent, 0, 3);
 
   const parts: { w: number; s: number }[] = [
     { w: 0.35, s: download },
@@ -51,7 +55,26 @@ export function computeScore(input: ScoreInput): ScoreResult {
   const weighted = parts.reduce((acc, p) => acc + p.w * p.s, 0) / wSum;
   const total = Math.round(weighted);
   const grade =
-    total >= 90 ? 'S' : total >= 80 ? 'A' : total >= 68 ? 'B' : total >= 55 ? 'C' : total >= 40 ? 'D' : 'E';
+    total >= 90
+      ? 'S'
+      : total >= 80
+        ? 'A'
+        : total >= 68
+          ? 'B'
+          : total >= 55
+            ? 'C'
+            : total >= 40
+              ? 'D'
+              : 'E';
 
-  return { download, upload, latency, jitter, stability, packetLoss, total, grade };
+  return {
+    download,
+    upload,
+    latency,
+    jitter,
+    stability,
+    packetLoss,
+    total,
+    grade,
+  };
 }

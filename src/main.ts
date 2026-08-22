@@ -1,5 +1,9 @@
 import './style.css';
-import type { ResultMessage, SampleMessage, ToMainMessage } from './engine/protocol';
+import type {
+  ResultMessage,
+  SampleMessage,
+  ToMainMessage,
+} from './engine/protocol';
 import { computeScore } from './score';
 
 function fmtProtocol(hop: string | null): string {
@@ -62,7 +66,14 @@ const els = {
   infoProto: must<HTMLElement>('infoProto'),
 };
 
-const PHASES = ['idle', 'latency', 'loss', 'download', 'upload', 'done'] as const;
+const PHASES = [
+  'idle',
+  'latency',
+  'loss',
+  'download',
+  'upload',
+  'done',
+] as const;
 type UiPhase = (typeof PHASES)[number];
 
 const DL_COLOR = '#4f8cff';
@@ -75,14 +86,20 @@ let emaUl: number | null = null;
 
 function niceCeil(v: number): number {
   if (!(v > 0)) return 10;
-  const exp = Math.pow(10, Math.floor(Math.log10(v)));
+  const exp = 10 ** Math.floor(Math.log10(v));
   const n = v / exp;
   const nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
   return nice * exp;
 }
 
 function trimNum(v: number): string {
-  return v >= 100 ? v.toFixed(0) : v >= 10 ? (Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)) : v.toFixed(1);
+  return v >= 100
+    ? v.toFixed(0)
+    : v >= 10
+      ? Number.isInteger(v)
+        ? v.toFixed(0)
+        : v.toFixed(1)
+      : v.toFixed(1);
 }
 
 type SeriesKey = 'download' | 'upload';
@@ -102,13 +119,15 @@ class SpeedChart {
 
   constructor(
     private canvas: HTMLCanvasElement,
-    private durationSec: number
+    private durationSec: number,
   ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('canvas 2d context unavailable');
     this.ctx = ctx;
     try {
-      this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      this.reducedMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)',
+      ).matches;
     } catch {}
     this.draw();
   }
@@ -195,7 +214,11 @@ class SpeedChart {
       ctx.fillStyle = 'rgba(148,163,184,0.9)';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`${trimNum(yMax >= 1000 ? (yMax * frac) / 1000 : yMax * frac)}`, padL - 8, y);
+      ctx.fillText(
+        `${trimNum(yMax >= 1000 ? (yMax * frac) / 1000 : yMax * frac)}`,
+        padL - 8,
+        y,
+      );
     }
 
     const stepSec = this.durationSec <= 6 ? 1 : this.durationSec <= 12 ? 2 : 5;
@@ -217,12 +240,17 @@ class SpeedChart {
     ctx.textBaseline = 'top';
     ctx.fillText(yMax >= 1000 ? 'Gbps' : 'Mbps', padL + 6, padT + 2);
 
-    const colors: Record<SeriesKey, string> = { download: DL_COLOR, upload: UL_COLOR };
+    const colors: Record<SeriesKey, string> = {
+      download: DL_COLOR,
+      upload: UL_COLOR,
+    };
     for (const key of ['download', 'upload'] as const) {
       const raw = this.series[key];
       if (raw.length < 2) continue;
       const k =
-        this.tipKey === key ? Math.min(1, (performance.now() - this.tipStartMs) / this.tipDurMs) : 1;
+        this.tipKey === key
+          ? Math.min(1, (performance.now() - this.tipStartMs) / this.tipDurMs)
+          : 1;
       const p0 = raw[raw.length - 2];
       const p1 = raw[raw.length - 1];
       const tipT = p0.t + (p1.t - p0.t) * k;
@@ -230,10 +258,15 @@ class SpeedChart {
       const xs: number[] = [];
       const ys: number[] = [];
       for (let i = 0; i < raw.length - 1; i++) {
-        xs.push(padL + (plotW * Math.min(raw[i].t, this.durationSec)) / this.durationSec);
+        xs.push(
+          padL +
+            (plotW * Math.min(raw[i].t, this.durationSec)) / this.durationSec,
+        );
         ys.push(padT + plotH * (1 - Math.min(raw[i].v / yMax, 1)));
       }
-      xs.push(padL + (plotW * Math.min(tipT, this.durationSec)) / this.durationSec);
+      xs.push(
+        padL + (plotW * Math.min(tipT, this.durationSec)) / this.durationSec,
+      );
       ys.push(padT + plotH * (1 - Math.min(tipV / yMax, 1)));
       ctx.save();
       ctx.strokeStyle = colors[key];
@@ -257,7 +290,7 @@ class SpeedChart {
   }
 }
 
-let chart = new SpeedChart(els.canvas, currentDurationSec);
+const chart = new SpeedChart(els.canvas, currentDurationSec);
 
 window.addEventListener('resize', () => chart.redraw());
 
@@ -269,7 +302,11 @@ function setPhase(phase: UiPhase): void {
   });
 }
 
-function setDirValue(numEl: HTMLSpanElement, unitEl: HTMLSpanElement, mbps: number | null): void {
+function setDirValue(
+  numEl: HTMLSpanElement,
+  unitEl: HTMLSpanElement,
+  mbps: number | null,
+): void {
   if (mbps === null) {
     numEl.textContent = '--';
     unitEl.textContent = '';
@@ -285,7 +322,9 @@ function setDirValue(numEl: HTMLSpanElement, unitEl: HTMLSpanElement, mbps: numb
 }
 
 function fmtCard(mbps: number): string {
-  return mbps >= 1000 ? `${(mbps / 1000).toFixed(2)} Gbps` : `${mbps.toFixed(1)} Mbps`;
+  return mbps >= 1000
+    ? `${(mbps / 1000).toFixed(2)} Gbps`
+    : `${mbps.toFixed(1)} Mbps`;
 }
 
 function setStatus(text: string): void {
@@ -298,7 +337,10 @@ function resetControls(): void {
   els.startBtn.textContent = '測定開始';
 }
 
-const rawSamples: Record<'download' | 'upload', { tMs: number; mbps: number }[]> = {
+const rawSamples: Record<
+  'download' | 'upload',
+  { tMs: number; mbps: number }[]
+> = {
   download: [],
   upload: [],
 };
@@ -330,12 +372,15 @@ function cvOf(samples: { tMs: number; mbps: number }[]): number | null {
   const core = trim > 0 ? means.slice(trim, means.length - trim) : means;
   const mean = core.reduce((a, b) => a + b, 0) / core.length;
   if (mean <= 0) return null;
-  const variance = core.reduce((acc, b) => acc + (b - mean) ** 2, 0) / core.length;
+  const variance =
+    core.reduce((acc, b) => acc + (b - mean) ** 2, 0) / core.length;
   return (Math.sqrt(variance) / mean) * 100;
 }
 
 function applyScore(score: ReturnType<typeof computeScore>): void {
-  els.scoreRing.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - score.total / 100));
+  els.scoreRing.style.strokeDashoffset = String(
+    RING_CIRCUMFERENCE * (1 - score.total / 100),
+  );
   els.scoreTotal.textContent = String(score.total);
   els.scoreGrade.textContent = `grade ${score.grade}`;
   els.scoreGrade.style.color = GRADE_COLORS[score.grade] ?? 'var(--text-2)';
@@ -362,10 +407,12 @@ function applyScore(score: ReturnType<typeof computeScore>): void {
 function onSample(msg: SampleMessage): void {
   rawSamples[msg.phase].push({ tMs: msg.tMs, mbps: msg.instantMbps });
   if (msg.phase === 'download') {
-    emaDl = emaDl === null ? msg.instantMbps : emaDl * 0.7 + msg.instantMbps * 0.3;
+    emaDl =
+      emaDl === null ? msg.instantMbps : emaDl * 0.7 + msg.instantMbps * 0.3;
     setDirValue(els.dlNum, els.dlUnit, emaDl);
   } else {
-    emaUl = emaUl === null ? msg.instantMbps : emaUl * 0.7 + msg.instantMbps * 0.3;
+    emaUl =
+      emaUl === null ? msg.instantMbps : emaUl * 0.7 + msg.instantMbps * 0.3;
     setDirValue(els.ulNum, els.ulUnit, emaUl);
   }
   chart.add(msg.phase, msg.tMs, msg.instantMbps);
@@ -379,20 +426,28 @@ function finish(res: ResultMessage): void {
   els.latVal.textContent = `${res.latencyMs.toFixed(1)} ms`;
   els.jitVal.textContent = `${res.jitterMs.toFixed(1)} ms`;
   els.lossVal.textContent =
-    res.packetLossPercent === null ? '--' : `${(res.packetLossPercent * 100).toFixed(2)} %`;
+    res.packetLossPercent === null
+      ? '--'
+      : `${(res.packetLossPercent * 100).toFixed(2)} %`;
   els.dlP90.textContent = fmtCard(res.download.p90Mbps);
   els.ulP90.textContent = fmtCard(res.upload.p90Mbps);
   els.latDownVal.textContent =
-    res.downLoadedLatencyMs === null ? '--' : `${res.downLoadedLatencyMs.toFixed(1)} ms`;
+    res.downLoadedLatencyMs === null
+      ? '--'
+      : `${res.downLoadedLatencyMs.toFixed(1)} ms`;
   els.latUpVal.textContent =
-    res.upLoadedLatencyMs === null ? '--' : `${res.upLoadedLatencyMs.toFixed(1)} ms`;
+    res.upLoadedLatencyMs === null
+      ? '--'
+      : `${res.upLoadedLatencyMs.toFixed(1)} ms`;
 
   els.results.hidden = false;
 
   const cvs = [cvOf(rawSamples.download), cvOf(rawSamples.upload)].filter(
-    (x): x is number => x !== null
+    (x): x is number => x !== null,
   );
-  const stabilityCv = cvs.length ? cvs.reduce((a, b) => a + b, 0) / cvs.length : null;
+  const stabilityCv = cvs.length
+    ? cvs.reduce((a, b) => a + b, 0) / cvs.length
+    : null;
   applyScore(
     computeScore({
       downloadMbps: res.download.sustainedMbps,
@@ -401,7 +456,7 @@ function finish(res: ResultMessage): void {
       jitterMs: res.jitterMs,
       stabilityCvPercent: stabilityCv,
       packetLossPercent: res.packetLossPercent,
-    })
+    }),
   );
 
   setDirValue(els.dlNum, els.dlUnit, res.download.sustainedMbps);
@@ -409,7 +464,10 @@ function finish(res: ResultMessage): void {
   resetControls();
 }
 
-const worker = new Worker(new URL('./engine/engine.worker.ts', import.meta.url), { type: 'module' });
+const worker = new Worker(
+  new URL('./engine/engine.worker.ts', import.meta.url),
+  { type: 'module' },
+);
 
 worker.addEventListener('message', (ev: MessageEvent) => {
   const msg = ev.data as ToMainMessage;
@@ -445,9 +503,13 @@ worker.addEventListener('error', () => {
 
 els.startBtn.addEventListener('click', () => {
   if (running) return;
-  const checked = document.querySelector<HTMLInputElement>('input[name="duration"]:checked');
+  const checked = document.querySelector<HTMLInputElement>(
+    'input[name="duration"]:checked',
+  );
   currentDurationSec = checked ? Number(checked.value) : 12;
-  const checkedProto = document.querySelector<HTMLInputElement>('input[name="proto"]:checked');
+  const checkedProto = document.querySelector<HTMLInputElement>(
+    'input[name="proto"]:checked',
+  );
   const host = (checkedProto?.value === 'h3' ? 'h3' : 'auto') as 'auto' | 'h3';
   running = true;
   emaDl = null;

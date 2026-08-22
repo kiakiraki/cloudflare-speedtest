@@ -16,7 +16,9 @@ interface IceServerConfig {
 
 function rateLimited(key: string): boolean {
   const now = Date.now();
-  const hits = (rateBuckets.get(key) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  const hits = (rateBuckets.get(key) ?? []).filter(
+    (t) => now - t < RATE_LIMIT_WINDOW_MS,
+  );
   if (hits.length >= RATE_LIMIT_MAX) {
     rateBuckets.set(key, hits);
     return true;
@@ -25,7 +27,8 @@ function rateLimited(key: string): boolean {
   rateBuckets.set(key, hits);
   if (rateBuckets.size > 10_000) {
     for (const [k, v] of rateBuckets) {
-      if (v.every((t) => now - t >= RATE_LIMIT_WINDOW_MS)) rateBuckets.delete(k);
+      if (v.every((t) => now - t >= RATE_LIMIT_WINDOW_MS))
+        rateBuckets.delete(k);
     }
   }
   return false;
@@ -48,19 +51,33 @@ function normalizeIceServers(data: unknown): IceServerConfig[] {
   const servers: IceServerConfig[] = [];
   for (const item of list) {
     if (!item || typeof item !== 'object') continue;
-    const entry = item as { urls?: unknown; username?: unknown; credential?: unknown };
-    const rawUrls = Array.isArray(entry.urls) ? entry.urls : typeof entry.urls === 'string' ? [entry.urls] : [];
-    const urls = browserSafeUrls(rawUrls.filter((u): u is string => typeof u === 'string'));
+    const entry = item as {
+      urls?: unknown;
+      username?: unknown;
+      credential?: unknown;
+    };
+    const rawUrls = Array.isArray(entry.urls)
+      ? entry.urls
+      : typeof entry.urls === 'string'
+        ? [entry.urls]
+        : [];
+    const urls = browserSafeUrls(
+      rawUrls.filter((u): u is string => typeof u === 'string'),
+    );
     if (!urls.length) continue;
     const server: IceServerConfig = { urls };
     if (typeof entry.username === 'string') server.username = entry.username;
-    if (typeof entry.credential === 'string') server.credential = entry.credential;
+    if (typeof entry.credential === 'string')
+      server.credential = entry.credential;
     servers.push(server);
   }
   return servers;
 }
 
-async function handleTurnCredentials(req: Request, env: Env): Promise<Response> {
+async function handleTurnCredentials(
+  req: Request,
+  env: Env,
+): Promise<Response> {
   if (req.method !== 'POST') {
     return Response.json({ error: 'method_not_allowed' }, { status: 405 });
   }
@@ -85,11 +102,13 @@ async function handleTurnCredentials(req: Request, env: Env): Promise<Response> 
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ ttl: 3600 }),
-      }
+      },
     );
-    if (!res.ok) return Response.json({ error: 'turn_api_error' }, { status: 502 });
+    if (!res.ok)
+      return Response.json({ error: 'turn_api_error' }, { status: 502 });
     const servers = normalizeIceServers(await res.json());
-    if (!servers.length) return Response.json({ error: 'no_ice_server' }, { status: 502 });
+    if (!servers.length)
+      return Response.json({ error: 'no_ice_server' }, { status: 502 });
     return Response.json(servers, { headers: { 'Cache-Control': 'no-store' } });
   } catch {
     return Response.json({ error: 'turn_api_error' }, { status: 502 });

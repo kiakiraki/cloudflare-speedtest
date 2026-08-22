@@ -11,7 +11,8 @@
   --ul: #34d97b;
   --danger: #ff7a7a;
   --radius-lg: 18px;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 }
 
 * {
@@ -27,18 +28,21 @@ body {
 body {
   min-height: 100vh;
   background:
-    radial-gradient(1100px 600px at 80% -10%, rgba(79, 140, 255, 0.14), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(52, 217, 123, 0.08), transparent 55%),
+    radial-gradient(
+      1100px 600px at 80% -10%,
+      rgba(79, 140, 255, 0.14),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 500px at -10% 110%,
+      rgba(52, 217, 123, 0.08),
+      transparent 55%
+    ),
     linear-gradient(180deg, var(--bg-0), var(--bg-1));
   background-attachment: fixed;
   color: var(--text-1);
   font-family:
-    "Inter",
-    "Segoe UI",
-    "Hiragino Sans",
-    "Noto Sans JP",
-    system-ui,
-    sans-serif;
+    "Inter", "Segoe UI", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
