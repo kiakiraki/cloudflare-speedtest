@@ -4,6 +4,15 @@ export interface StartMessage {
   host?: 'auto' | 'h3';
 }
 
+export interface MeasureLossMessage {
+  type: 'measure-loss';
+}
+
+export interface LossResultMessage {
+  type: 'loss-result';
+  packetLossPercent: number | null;
+}
+
 export interface MetaMessage {
   type: 'meta';
   ip: string | null;
@@ -58,6 +67,7 @@ export type ToMainMessage =
   | SampleMessage
   | ResultMessage
   | ErrorMessage
-  | ProtocolMessage;
+  | ProtocolMessage
+  | MeasureLossMessage;
 
-export type FromMainMessage = StartMessage;
+export type FromMainMessage = StartMessage | LossResultMessage;

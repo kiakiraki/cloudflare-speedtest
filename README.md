@@ -40,7 +40,7 @@ npm run deploy
 
 ## パケットロス測定について
 
-パケットロスは、Cloudflare Realtime(TURN)が発行したクレデンシャルを使い、**TURN リレー経由の WebRTC データチャネル**で送出したパケットの到達率を測る方式です。このため Worker に以下のシークレットが必要です。
+パケットロスは、Cloudflare Realtime(TURN)が発行したクレデンシャルを使い、**TURN リレー経由の WebRTC データチャネル**で送出したパケットの到達率を測る方式です。RTCPeerConnection は Web Worker 内で利用できないため、この計測だけはメインスレッド側モジュール(`src/engine/packet-loss.ts`)で実行し、ワーカーとは `measure-loss` / `loss-result` メッセージでやり取りします。このため Worker に以下のシークレットが必要です。
 
 ```bash
 # 本番
