@@ -8,20 +8,19 @@ const HOSTS: Record<'auto' | 'h3', string> = {
 let baseUrl = HOSTS.auto;
 
 const PING_COUNT = 20;
-const PROBE_BYTES = 25_000_000;
-const PROBE_CAP_MS = 5000;
 const DOWNLOAD_STREAMS = 16;
 const UPLOAD_STREAMS = 8;
 const STAGGER_MS = 250;
 const MIN_DL_PAYLOAD = 1_000_000;
 const MAX_DL_PAYLOAD = 250_000_000;
-const UPLOAD_SIZES = [8_000_000, 32_000_000, 64_000_000] as const;
+const UPLOAD_LADDER = [1_000_000, 2_000_000, 4_000_000, 8_000_000, 16_000_000, 32_000_000, 64_000_000] as const;
 const BASE_UPLOAD_BYTES = 8_000_000;
 const TARGET_STREAM_SEC = 2.5;
 const RAMP_EXCLUDE_MS = 1000;
 const PEAK_WINDOW_MS = 2000;
 const SAMPLE_INTERVAL_MS = 100;
 const DATA_LIMIT_BYTES = 20_000_000_000;
+const LOADED_LATENCY_THROTTLE_MS = 400;
 
 interface EngineScope {
   postMessage(message: ToMainMessage): void;
@@ -43,13 +42,19 @@ let reqSeq = 0;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-function summarize(points: SamplePoint[]): DirectionSummary {
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))];
+}
+
+function summarize(points: SamplePoint[], excludeUntilMs: number): DirectionSummary {
   const n = points.length;
-  if (n < 2) return { peakMbps: 0, sustainedMbps: 0 };
+  if (n < 2) return { peakMbps: 0, sustainedMbps: 0, p90Mbps: 0 };
   const last = points[n - 1];
   let sustained = 0;
   for (const p of points) {
-    if (p.tMs >= RAMP_EXCLUDE_MS) {
+    if (p.tMs >= excludeUntilMs) {
       const spanMs = last.tMs - p.tMs;
       if (spanMs > 0) {
         sustained = (8 * (last.totalBytes - p.totalBytes)) / (spanMs / 1000) / 1e6;
@@ -62,15 +67,21 @@ function summarize(points: SamplePoint[]): DirectionSummary {
   }
   let peak = 0;
   let lo = 0;
+  const windowMbps: number[] = [];
   for (let hi = 1; hi < n; hi++) {
     const boundary = points[hi].tMs - PEAK_WINDOW_MS;
     while (lo + 1 < n && points[lo + 1].tMs <= boundary) lo++;
     const spanMs = points[hi].tMs - points[lo].tMs;
     if (spanMs < PEAK_WINDOW_MS - SAMPLE_INTERVAL_MS * 1.5) continue;
     const mbps = (8 * (points[hi].totalBytes - points[lo].totalBytes)) / (spanMs / 1000) / 1e6;
+    windowMbps.push(mbps);
     if (mbps > peak) peak = mbps;
   }
-  return { peakMbps: peak, sustainedMbps: sustained };
+  return {
+    peakMbps: peak,
+    sustainedMbps: sustained,
+    p90Mbps: windowMbps.length >= 2 ? percentile(windowMbps, 0.9) : sustained,
+  };
 }
 
 function startSampling(
@@ -178,42 +189,43 @@ async function measureLatency(): Promise<{ latencyMs: number; jitterMs: number }
   return { latencyMs: latency, jitterMs: diffSum / (txTotal.length - 1) };
 }
 
-async function calibrateDownloadPayload(): Promise<number> {
-  const ctrl = new AbortController();
-  let total = 0;
-  const start = performance.now();
-  const killer = setTimeout(() => ctrl.abort(), PROBE_CAP_MS);
-  const one = async (): Promise<void> => {
+async function runLoadedPingLoop(
+  ctrl: AbortController,
+  start: number,
+  durationMs: number
+): Promise<{ txRtts: number[]; netRtts: number[] }> {
+  const txRtts: number[] = [];
+  const netRtts: number[] = [];
+  while (!ctrl.signal.aborted && performance.now() - start < durationMs) {
+    const url = `${baseUrl}/__down?bytes=0&n=${reqSeq++}`;
+    const t0 = performance.now();
     try {
-      const res = await fetch(`${baseUrl}/__down?bytes=${PROBE_BYTES}&n=${reqSeq++}`, {
-        cache: 'no-store',
-        signal: ctrl.signal,
-      });
-      if (!res.ok || !res.body) throw new Error(`probe HTTP ${res.status}`);
-      const reader = res.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.length;
-      }
-    } catch {
-      return;
-    }
-  };
-  await Promise.all(Array.from({ length: DOWNLOAD_STREAMS }, () => one()));
-  clearTimeout(killer);
-  const elapsedSec = Math.max((performance.now() - start) / 1000, 0.05);
-  const aggregateBps = (8 * total) / elapsedSec;
-  const perStreamBytesPerSec = aggregateBps / DOWNLOAD_STREAMS / 8;
-  const wanted = perStreamBytesPerSec * TARGET_STREAM_SEC;
-  return Math.min(MAX_DL_PAYLOAD, Math.max(MIN_DL_PAYLOAD, Math.floor(wanted)));
+      const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+      await res.arrayBuffer();
+      const dt = performance.now() - t0;
+      const l4 = parseCfL4(res.headers.get('server-timing'));
+      txRtts.push(dt);
+      if (l4.rttMs !== null) netRtts.push(l4.rttMs);
+    } catch {}
+    await sleep(Math.max(50, LOADED_LATENCY_THROTTLE_MS - (performance.now() - t0)));
+  }
+  return { txRtts, netRtts };
 }
 
-async function measureDownload(durationSec: number): Promise<DirectionSummary> {
-  const payloadBytes = await calibrateDownloadPayload();
+function reduceLoadedLatency(txRtts: number[], netRtts: number[]): number | null {
+  if (netRtts.length > 0 && netRtts.length >= txRtts.length * 0.5) return percentile(netRtts, 0.5);
+  if (txRtts.length > 0) return percentile(txRtts, 0.5);
+  return null;
+}
+
+async function measureDownload(
+  durationSec: number
+): Promise<{ summary: DirectionSummary; loadedLatencyMs: number | null }> {
   const durationMs = durationSec * 1000;
   const ctrl = new AbortController();
   let total = 0;
+  let payloadBytes = MIN_DL_PAYLOAD;
+  let settledAtMs: number | null = null;
   const points: SamplePoint[] = [];
   const start = performance.now();
   const sampler = startSampling('download', start, () => total, points);
@@ -221,6 +233,7 @@ async function measureDownload(durationSec: number): Promise<DirectionSummary> {
 
   const runStream = async (): Promise<void> => {
     while (!ctrl.signal.aborted && performance.now() - start < durationMs) {
+      const t0 = performance.now();
       try {
         const res = await fetch(`${baseUrl}/__down?bytes=${payloadBytes}&n=${reqSeq++}`, {
           cache: 'no-store',
@@ -240,20 +253,37 @@ async function measureDownload(durationSec: number): Promise<DirectionSummary> {
       } catch {
         if (ctrl.signal.aborted) return;
         await sleep(200);
+        continue;
+      }
+      if (ctrl.signal.aborted) return;
+      const durMs = performance.now() - t0;
+      if (durMs < TARGET_STREAM_SEC * 1000 * 0.6 && payloadBytes < MAX_DL_PAYLOAD) {
+        payloadBytes = Math.min(
+          MAX_DL_PAYLOAD,
+          Math.max(MIN_DL_PAYLOAD, Math.round(payloadBytes * Math.min((TARGET_STREAM_SEC * 1000) / durMs, 8)))
+        );
+        settledAtMs = null;
+      } else if (settledAtMs === null) {
+        settledAtMs = performance.now() - start;
       }
     }
   };
 
+  const pinger = runLoadedPingLoop(ctrl, start, durationMs);
   const streams: Promise<void>[] = [];
   for (let i = 0; i < DOWNLOAD_STREAMS; i++) {
     streams.push(sleep(i * STAGGER_MS).then(runStream));
   }
   await Promise.all(streams);
+  const { txRtts, netRtts } = await pinger;
 
   clearTimeout(killer);
   clearInterval(sampler);
   points.push({ tMs: performance.now() - start, totalBytes: total });
-  return summarize(points);
+  return {
+    summary: summarize(points, Math.max(RAMP_EXCLUDE_MS, settledAtMs ?? 0)),
+    loadedLatencyMs: reduceLoadedLatency(txRtts, netRtts),
+  };
 }
 
 function randomFill(buf: Uint8Array<ArrayBuffer>): void {
@@ -335,40 +365,15 @@ function sendUpload(
   });
 }
 
-async function chooseUploadSize(): Promise<number> {
-  const ctrl = new AbortController();
-  const active = new Set<XMLHttpRequest>();
-  let total = 0;
-  const payload = getUploadPayload(UPLOAD_SIZES[0]);
-  const start = performance.now();
-  const killer = setTimeout(() => ctrl.abort(), PROBE_CAP_MS);
-  const streams: Promise<void>[] = [];
-  for (let i = 0; i < UPLOAD_STREAMS; i++) {
-    streams.push(
-      sendUpload(payload, ctrl, active, (d) => {
-        total += d;
-      }).catch(() => undefined)
-    );
-  }
-  await Promise.all(streams);
-  clearTimeout(killer);
-  const elapsedSec = Math.max((performance.now() - start) / 1000, 0.05);
-  const aggregateBps = (8 * total) / elapsedSec;
-  const perStreamBytesPerSec = aggregateBps / UPLOAD_STREAMS / 8;
-  const needed = perStreamBytesPerSec * TARGET_STREAM_SEC;
-  for (const size of UPLOAD_SIZES) {
-    if (size >= needed) return size;
-  }
-  return UPLOAD_SIZES[UPLOAD_SIZES.length - 1];
-}
-
-async function measureUpload(durationSec: number): Promise<DirectionSummary> {
-  const sizeBytes = await chooseUploadSize();
-  const payload = getUploadPayload(sizeBytes);
+async function measureUpload(
+  durationSec: number
+): Promise<{ summary: DirectionSummary; loadedLatencyMs: number | null }> {
   const durationMs = durationSec * 1000;
   const ctrl = new AbortController();
   const active = new Set<XMLHttpRequest>();
   let total = 0;
+  let ladderIdx = 0;
+  let settledAtMs: number | null = null;
   const points: SamplePoint[] = [];
   const start = performance.now();
   const sampler = startSampling('upload', start, () => total, points);
@@ -383,28 +388,43 @@ async function measureUpload(durationSec: number): Promise<DirectionSummary> {
 
   const runStream = async (): Promise<void> => {
     while (!ctrl.signal.aborted && performance.now() - start < durationMs) {
+      const t0 = performance.now();
       try {
-        await sendUpload(payload, ctrl, active, (d) => {
+        await sendUpload(getUploadPayload(UPLOAD_LADDER[ladderIdx]), ctrl, active, (d) => {
           total += d;
           if (total >= DATA_LIMIT_BYTES) ctrl.abort();
         });
       } catch {
         if (ctrl.signal.aborted) return;
         await sleep(200);
+        continue;
+      }
+      if (ctrl.signal.aborted) return;
+      const durMs = performance.now() - t0;
+      if (durMs < TARGET_STREAM_SEC * 1000 * 0.6 && ladderIdx < UPLOAD_LADDER.length - 1) {
+        ladderIdx++;
+        settledAtMs = null;
+      } else if (settledAtMs === null) {
+        settledAtMs = performance.now() - start;
       }
     }
   };
 
+  const pinger = runLoadedPingLoop(ctrl, start, durationMs);
   const streams: Promise<void>[] = [];
   for (let i = 0; i < UPLOAD_STREAMS; i++) {
     streams.push(sleep(i * STAGGER_MS).then(runStream));
   }
   await Promise.all(streams);
+  const { txRtts, netRtts } = await pinger;
 
   clearTimeout(killer);
   clearInterval(sampler);
   points.push({ tMs: performance.now() - start, totalBytes: total });
-  return summarize(points);
+  return {
+    summary: summarize(points, Math.max(RAMP_EXCLUDE_MS, settledAtMs ?? 0)),
+    loadedLatencyMs: reduceLoadedLatency(txRtts, netRtts),
+  };
 }
 
 const PACKET_COUNT = 100;
@@ -544,11 +564,20 @@ async function run(durationSec: number): Promise<void> {
     scope.postMessage({ type: 'phase', phase: 'loss' });
     const packetLossPercent = await measurePacketLoss().catch(() => null);
     scope.postMessage({ type: 'phase', phase: 'download' });
-    const download = await measureDownload(durationSec);
+    const { summary: download, loadedLatencyMs: downLoadedLatencyMs } = await measureDownload(durationSec);
     scope.postMessage({ type: 'phase', phase: 'upload' });
-    const upload = await measureUpload(durationSec);
+    const { summary: upload, loadedLatencyMs: upLoadedLatencyMs } = await measureUpload(durationSec);
     scope.postMessage({ type: 'phase', phase: 'done' });
-    scope.postMessage({ type: 'result', download, upload, latencyMs, jitterMs, packetLossPercent });
+    scope.postMessage({
+      type: 'result',
+      download,
+      upload,
+      latencyMs,
+      jitterMs,
+      packetLossPercent,
+      downLoadedLatencyMs,
+      upLoadedLatencyMs,
+    });
   } catch (err) {
     scope.postMessage({
       type: 'error',

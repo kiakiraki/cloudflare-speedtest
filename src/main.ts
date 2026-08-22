@@ -33,6 +33,10 @@ const els = {
   latVal: must<HTMLSpanElement>('latVal'),
   jitVal: must<HTMLSpanElement>('jitVal'),
   lossVal: must<HTMLSpanElement>('lossVal'),
+  dlP90: must<HTMLSpanElement>('dlP90'),
+  ulP90: must<HTMLSpanElement>('ulP90'),
+  latDownVal: must<HTMLSpanElement>('latDownVal'),
+  latUpVal: must<HTMLSpanElement>('latUpVal'),
   scoreRing: must<SVGCircleElement>('scoreRing'),
   scoreTotal: must<HTMLSpanElement>('scoreTotal'),
   scoreGrade: must<HTMLSpanElement>('scoreGrade'),
@@ -376,6 +380,12 @@ function finish(res: ResultMessage): void {
   els.jitVal.textContent = `${res.jitterMs.toFixed(1)} ms`;
   els.lossVal.textContent =
     res.packetLossPercent === null ? '--' : `${(res.packetLossPercent * 100).toFixed(2)} %`;
+  els.dlP90.textContent = fmtCard(res.download.p90Mbps);
+  els.ulP90.textContent = fmtCard(res.upload.p90Mbps);
+  els.latDownVal.textContent =
+    res.downLoadedLatencyMs === null ? '--' : `${res.downLoadedLatencyMs.toFixed(1)} ms`;
+  els.latUpVal.textContent =
+    res.upLoadedLatencyMs === null ? '--' : `${res.upLoadedLatencyMs.toFixed(1)} ms`;
 
   els.results.hidden = false;
 
