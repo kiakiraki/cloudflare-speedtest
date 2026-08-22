@@ -33,6 +33,7 @@ export interface SampleMessage {
 export interface DirectionSummary {
   peakMbps: number;
   sustainedMbps: number;
+  p90Mbps: number;
 }
 
 export interface ResultMessage {
@@ -42,6 +43,8 @@ export interface ResultMessage {
   latencyMs: number;
   jitterMs: number;
   packetLossPercent: number | null;
+  downLoadedLatencyMs: number | null;
+  upLoadedLatencyMs: number | null;
 }
 
 export interface ErrorMessage {
