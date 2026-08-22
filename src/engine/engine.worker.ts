@@ -1,4 +1,8 @@
-import type { DirectionSummary, FromMainMessage, ToMainMessage } from './protocol';
+import type {
+  DirectionSummary,
+  FromMainMessage,
+  ToMainMessage,
+} from './protocol';
 
 const HOSTS: Record<'auto' | 'h3', string> = {
   auto: 'https://speed.cloudflare.com',
@@ -13,7 +17,10 @@ const UPLOAD_STREAMS = 8;
 const STAGGER_MS = 250;
 const MIN_DL_PAYLOAD = 1_000_000;
 const MAX_DL_PAYLOAD = 250_000_000;
-const UPLOAD_LADDER = [1_000_000, 2_000_000, 4_000_000, 8_000_000, 16_000_000, 32_000_000, 64_000_000] as const;
+const UPLOAD_LADDER = [
+  1_000_000, 2_000_000, 4_000_000, 8_000_000, 16_000_000, 32_000_000,
+  64_000_000,
+] as const;
 const BASE_UPLOAD_BYTES = 8_000_000;
 const TARGET_STREAM_SEC = 2.5;
 const RAMP_EXCLUDE_MS = 1000;
@@ -24,7 +31,9 @@ const LOADED_LATENCY_THROTTLE_MS = 400;
 
 interface EngineScope {
   postMessage(message: ToMainMessage): void;
-  onmessage: ((this: EngineScope, ev: MessageEvent<FromMainMessage>) => void) | null;
+  onmessage:
+    | ((this: EngineScope, ev: MessageEvent<FromMainMessage>) => void)
+    | null;
 }
 
 const scope = self as unknown as EngineScope;
@@ -40,15 +49,21 @@ interface SamplePoint {
 
 let reqSeq = 0;
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))];
+  return sorted[
+    Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))
+  ];
 }
 
-function summarize(points: SamplePoint[], excludeUntilMs: number): DirectionSummary {
+function summarize(
+  points: SamplePoint[],
+  excludeUntilMs: number,
+): DirectionSummary {
   const n = points.length;
   if (n < 2) return { peakMbps: 0, sustainedMbps: 0, p90Mbps: 0 };
   const last = points[n - 1];
@@ -57,7 +72,8 @@ function summarize(points: SamplePoint[], excludeUntilMs: number): DirectionSumm
     if (p.tMs >= excludeUntilMs) {
       const spanMs = last.tMs - p.tMs;
       if (spanMs > 0) {
-        sustained = (8 * (last.totalBytes - p.totalBytes)) / (spanMs / 1000) / 1e6;
+        sustained =
+          (8 * (last.totalBytes - p.totalBytes)) / (spanMs / 1000) / 1e6;
       }
       break;
     }
@@ -73,7 +89,10 @@ function summarize(points: SamplePoint[], excludeUntilMs: number): DirectionSumm
     while (lo + 1 < n && points[lo + 1].tMs <= boundary) lo++;
     const spanMs = points[hi].tMs - points[lo].tMs;
     if (spanMs < PEAK_WINDOW_MS - SAMPLE_INTERVAL_MS * 1.5) continue;
-    const mbps = (8 * (points[hi].totalBytes - points[lo].totalBytes)) / (spanMs / 1000) / 1e6;
+    const mbps =
+      (8 * (points[hi].totalBytes - points[lo].totalBytes)) /
+      (spanMs / 1000) /
+      1e6;
     windowMbps.push(mbps);
     if (mbps > peak) peak = mbps;
   }
@@ -88,7 +107,7 @@ function startSampling(
   phase: 'download' | 'upload',
   start: number,
   getTotal: () => number,
-  points: SamplePoint[]
+  points: SamplePoint[],
 ): number {
   points.push({ tMs: 0, totalBytes: getTotal() });
   return setInterval(() => {
@@ -109,7 +128,11 @@ function startSampling(
 async function postMeta(): Promise<void> {
   const res = await fetch(`${baseUrl}/meta`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`meta HTTP ${res.status}`);
-  const meta = (await res.json()) as { clientIp?: string; asOrganization?: string; colo?: string | { iata?: string; city?: string } };
+  const meta = (await res.json()) as {
+    clientIp?: string;
+    asOrganization?: string;
+    colo?: string | { iata?: string; city?: string };
+  };
   const rawColo = meta.colo;
   const colo =
     typeof rawColo === 'string'
@@ -128,10 +151,15 @@ async function postMeta(): Promise<void> {
 }
 
 function latestHopProtocol(): string | null {
-  const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+  const entries = performance.getEntriesByType(
+    'resource',
+  ) as PerformanceResourceTiming[];
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
-    if ((e.name.includes('__down') || e.name.includes('__up')) && e.nextHopProtocol) {
+    if (
+      (e.name.includes('__down') || e.name.includes('__up')) &&
+      e.nextHopProtocol
+    ) {
       return e.nextHopProtocol;
     }
   }
@@ -151,11 +179,15 @@ function parseCfL4(serverTiming: string | null): CfL4Timings {
   const minRttUs = Number(params.get('min_rtt'));
   return {
     rttMs: Number.isFinite(rttUs) && rttUs > 0 ? rttUs / 1000 : null,
-    minRttMs: Number.isFinite(minRttUs) && minRttUs > 0 ? minRttUs / 1000 : null,
+    minRttMs:
+      Number.isFinite(minRttUs) && minRttUs > 0 ? minRttUs / 1000 : null,
   };
 }
 
-async function measureLatency(): Promise<{ latencyMs: number; jitterMs: number }> {
+async function measureLatency(): Promise<{
+  latencyMs: number;
+  jitterMs: number;
+}> {
   const txTotal: number[] = [];
   const netRtts: number[] = [];
   for (let i = 0; i < PING_COUNT; i++) {
@@ -192,7 +224,7 @@ async function measureLatency(): Promise<{ latencyMs: number; jitterMs: number }
 async function runLoadedPingLoop(
   ctrl: AbortController,
   start: number,
-  durationMs: number
+  durationMs: number,
 ): Promise<{ txRtts: number[]; netRtts: number[] }> {
   const txRtts: number[] = [];
   const netRtts: number[] = [];
@@ -207,19 +239,25 @@ async function runLoadedPingLoop(
       txRtts.push(dt);
       if (l4.rttMs !== null) netRtts.push(l4.rttMs);
     } catch {}
-    await sleep(Math.max(50, LOADED_LATENCY_THROTTLE_MS - (performance.now() - t0)));
+    await sleep(
+      Math.max(50, LOADED_LATENCY_THROTTLE_MS - (performance.now() - t0)),
+    );
   }
   return { txRtts, netRtts };
 }
 
-function reduceLoadedLatency(txRtts: number[], netRtts: number[]): number | null {
-  if (netRtts.length > 0 && netRtts.length >= txRtts.length * 0.5) return percentile(netRtts, 0.5);
+function reduceLoadedLatency(
+  txRtts: number[],
+  netRtts: number[],
+): number | null {
+  if (netRtts.length > 0 && netRtts.length >= txRtts.length * 0.5)
+    return percentile(netRtts, 0.5);
   if (txRtts.length > 0) return percentile(txRtts, 0.5);
   return null;
 }
 
 async function measureDownload(
-  durationSec: number
+  durationSec: number,
 ): Promise<{ summary: DirectionSummary; loadedLatencyMs: number | null }> {
   const durationMs = durationSec * 1000;
   const ctrl = new AbortController();
@@ -235,10 +273,13 @@ async function measureDownload(
     while (!ctrl.signal.aborted && performance.now() - start < durationMs) {
       const t0 = performance.now();
       try {
-        const res = await fetch(`${baseUrl}/__down?bytes=${payloadBytes}&n=${reqSeq++}`, {
-          cache: 'no-store',
-          signal: ctrl.signal,
-        });
+        const res = await fetch(
+          `${baseUrl}/__down?bytes=${payloadBytes}&n=${reqSeq++}`,
+          {
+            cache: 'no-store',
+            signal: ctrl.signal,
+          },
+        );
         if (!res.ok || !res.body) throw new Error(`down HTTP ${res.status}`);
         const reader = res.body.getReader();
         for (;;) {
@@ -257,10 +298,18 @@ async function measureDownload(
       }
       if (ctrl.signal.aborted) return;
       const durMs = performance.now() - t0;
-      if (durMs < TARGET_STREAM_SEC * 1000 * 0.6 && payloadBytes < MAX_DL_PAYLOAD) {
+      if (
+        durMs < TARGET_STREAM_SEC * 1000 * 0.6 &&
+        payloadBytes < MAX_DL_PAYLOAD
+      ) {
         payloadBytes = Math.min(
           MAX_DL_PAYLOAD,
-          Math.max(MIN_DL_PAYLOAD, Math.round(payloadBytes * Math.min((TARGET_STREAM_SEC * 1000) / durMs, 8)))
+          Math.max(
+            MIN_DL_PAYLOAD,
+            Math.round(
+              payloadBytes * Math.min((TARGET_STREAM_SEC * 1000) / durMs, 8),
+            ),
+          ),
         );
         settledAtMs = null;
       } else if (settledAtMs === null) {
@@ -289,7 +338,9 @@ async function measureDownload(
 function randomFill(buf: Uint8Array<ArrayBuffer>): void {
   const quantum = 65_536;
   for (let off = 0; off < buf.length; off += quantum) {
-    crypto.getRandomValues(buf.subarray(off, Math.min(off + quantum, buf.length)));
+    crypto.getRandomValues(
+      buf.subarray(off, Math.min(off + quantum, buf.length)),
+    );
   }
 }
 
@@ -302,7 +353,8 @@ function randomChunk(size: number): Uint8Array<ArrayBuffer> {
 }
 
 function getBaseChunk(): Uint8Array<ArrayBuffer> {
-  return baseUploadChunk ?? (baseUploadChunk = randomChunk(BASE_UPLOAD_BYTES));
+  baseUploadChunk ??= randomChunk(BASE_UPLOAD_BYTES);
+  return baseUploadChunk;
 }
 
 const uploadPayloads = new Map<number, Uint8Array<ArrayBuffer>>();
@@ -324,7 +376,7 @@ function sendUpload(
   payload: Uint8Array<ArrayBuffer>,
   ctrl: AbortController,
   active: Set<XMLHttpRequest>,
-  onDelta: (delta: number) => void
+  onDelta: (delta: number) => void,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -366,7 +418,7 @@ function sendUpload(
 }
 
 async function measureUpload(
-  durationSec: number
+  durationSec: number,
 ): Promise<{ summary: DirectionSummary; loadedLatencyMs: number | null }> {
   const durationMs = durationSec * 1000;
   const ctrl = new AbortController();
@@ -383,17 +435,22 @@ async function measureUpload(
     () => {
       for (const xhr of active) xhr.abort();
     },
-    { once: true }
+    { once: true },
   );
 
   const runStream = async (): Promise<void> => {
     while (!ctrl.signal.aborted && performance.now() - start < durationMs) {
       const t0 = performance.now();
       try {
-        await sendUpload(getUploadPayload(UPLOAD_LADDER[ladderIdx]), ctrl, active, (d) => {
-          total += d;
-          if (total >= DATA_LIMIT_BYTES) ctrl.abort();
-        });
+        await sendUpload(
+          getUploadPayload(UPLOAD_LADDER[ladderIdx]),
+          ctrl,
+          active,
+          (d) => {
+            total += d;
+            if (total >= DATA_LIMIT_BYTES) ctrl.abort();
+          },
+        );
       } catch {
         if (ctrl.signal.aborted) return;
         await sleep(200);
@@ -401,7 +458,10 @@ async function measureUpload(
       }
       if (ctrl.signal.aborted) return;
       const durMs = performance.now() - t0;
-      if (durMs < TARGET_STREAM_SEC * 1000 * 0.6 && ladderIdx < UPLOAD_LADDER.length - 1) {
+      if (
+        durMs < TARGET_STREAM_SEC * 1000 * 0.6 &&
+        ladderIdx < UPLOAD_LADDER.length - 1
+      ) {
         ladderIdx++;
         settledAtMs = null;
       } else if (settledAtMs === null) {
@@ -451,7 +511,10 @@ function isUdpCandidate(c: RTCIceCandidate): boolean {
 async function measurePacketLoss(): Promise<number | null> {
   let iceServers: TurnIceServer[];
   try {
-    const res = await fetch('/api/turn-credentials', { method: 'POST', cache: 'no-store' });
+    const res = await fetch('/api/turn-credentials', {
+      method: 'POST',
+      cache: 'no-store',
+    });
     if (!res.ok) return null;
     iceServers = (await res.json()) as TurnIceServer[];
     if (!Array.isArray(iceServers) || iceServers.length === 0) return null;
@@ -460,10 +523,16 @@ async function measurePacketLoss(): Promise<number | null> {
   }
 
   return new Promise<number | null>((resolve) => {
-    const config: RTCConfiguration = { iceServers, iceTransportPolicy: 'relay' };
+    const config: RTCConfiguration = {
+      iceServers,
+      iceTransportPolicy: 'relay',
+    };
     const sender = new RTCPeerConnection(config);
     const receiver = new RTCPeerConnection(config);
-    const senderDc = sender.createDataChannel('pl', { ordered: false, maxRetransmits: 0 });
+    const senderDc = sender.createDataChannel('pl', {
+      ordered: false,
+      maxRetransmits: 0,
+    });
 
     let received = 0;
     let settled = false;
@@ -482,12 +551,19 @@ async function measurePacketLoss(): Promise<number | null> {
         receiver.close();
         senderDc.close();
       } catch {}
-      resolve(opened ? Math.max(0, Math.min(1, (PACKET_COUNT - received) / PACKET_COUNT)) : null);
+      resolve(
+        opened
+          ? Math.max(0, Math.min(1, (PACKET_COUNT - received) / PACKET_COUNT))
+          : null,
+      );
     };
 
     const killer = setTimeout(
       finish,
-      LOSS_CONNECT_TIMEOUT_MS + (PACKET_COUNT / PACKET_BATCH) * BATCH_WAIT_MS + LOSS_RESPONSES_WAIT_MS + 2000
+      LOSS_CONNECT_TIMEOUT_MS +
+        (PACKET_COUNT / PACKET_BATCH) * BATCH_WAIT_MS +
+        LOSS_RESPONSES_WAIT_MS +
+        2000,
     );
 
     const drainPending = (): void => {
@@ -564,9 +640,11 @@ async function run(durationSec: number): Promise<void> {
     scope.postMessage({ type: 'phase', phase: 'loss' });
     const packetLossPercent = await measurePacketLoss().catch(() => null);
     scope.postMessage({ type: 'phase', phase: 'download' });
-    const { summary: download, loadedLatencyMs: downLoadedLatencyMs } = await measureDownload(durationSec);
+    const { summary: download, loadedLatencyMs: downLoadedLatencyMs } =
+      await measureDownload(durationSec);
     scope.postMessage({ type: 'phase', phase: 'upload' });
-    const { summary: upload, loadedLatencyMs: upLoadedLatencyMs } = await measureUpload(durationSec);
+    const { summary: upload, loadedLatencyMs: upLoadedLatencyMs } =
+      await measureUpload(durationSec);
     scope.postMessage({ type: 'phase', phase: 'done' });
     scope.postMessage({
       type: 'result',
