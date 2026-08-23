@@ -1,3 +1,5 @@
+import { classifyIp } from './netinfo';
+
 interface Env {
   ASSETS: Fetcher;
   TURN_KEY_ID?: string;
@@ -115,9 +117,64 @@ async function handleTurnCredentials(
   }
 }
 
+interface ConnectionInfoPayload {
+  ip: string;
+  ipVersion: 4 | 6 | null;
+  asn: number | null;
+  asOrganization: string | null;
+  colo: string | null;
+  country: string | null;
+  httpProtocol: string | null;
+  clientTcpRttMs: number | null;
+}
+
+function cfField(cf: unknown, key: string): unknown {
+  if (!cf || typeof cf !== 'object') return null;
+  return (cf as Record<string, unknown>)[key];
+}
+
+function cfString(cf: unknown, key: string): string | null {
+  const value = cfField(cf, key);
+  return typeof value === 'string' ? value : null;
+}
+
+function cfNumber(cf: unknown, key: string): number | null {
+  const value = cfField(cf, key);
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function handleConnectionInfo(req: Request): Response {
+  if (req.method !== 'GET') {
+    return Response.json({ error: 'method_not_allowed' }, { status: 405 });
+  }
+  const origin = req.headers.get('Origin');
+  if (origin && origin !== new URL(req.url).origin) {
+    return Response.json({ error: 'forbidden_origin' }, { status: 403 });
+  }
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (rateLimited(ip)) {
+    return Response.json({ error: 'rate_limited' }, { status: 429 });
+  }
+  const cf: unknown = req.cf;
+  const payload: ConnectionInfoPayload = {
+    ip,
+    ipVersion: classifyIp(ip),
+    asn: cfNumber(cf, 'asn'),
+    asOrganization: cfString(cf, 'asOrganization'),
+    colo: cfString(cf, 'colo'),
+    country: cfString(cf, 'country'),
+    httpProtocol: cfString(cf, 'httpProtocol'),
+    clientTcpRttMs: cfNumber(cf, 'clientTcpRtt'),
+  };
+  return Response.json(payload, { headers: { 'Cache-Control': 'no-store' } });
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === '/api/connection-info') {
+      return handleConnectionInfo(req);
+    }
     if (url.pathname === '/api/turn-credentials') {
       return handleTurnCredentials(req, env);
     }

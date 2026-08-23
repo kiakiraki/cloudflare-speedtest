@@ -5,6 +5,7 @@ import type {
   SampleMessage,
   ToMainMessage,
 } from './engine/protocol';
+import { estimateConnection, probeFamilies } from './netinfo';
 import { computeScore } from './score';
 
 function fmtProtocol(hop: string | null): string {
@@ -65,6 +66,8 @@ const els = {
   infoIsp: must<HTMLElement>('infoIsp'),
   infoIp: must<HTMLElement>('infoIp'),
   infoProto: must<HTMLElement>('infoProto'),
+  infoPath: must<HTMLElement>('infoPath'),
+  infoLineType: must<HTMLElement>('infoLineType'),
 };
 
 const PHASES = [
@@ -532,3 +535,36 @@ els.startBtn.addEventListener('click', () => {
   chart.reset(currentDurationSec);
   worker.postMessage({ type: 'start', durationSec: currentDurationSec, host });
 });
+
+type ConnectionInfoResponse = {
+  ipVersion?: unknown;
+};
+
+function readIpVersion(data: unknown): 4 | 6 | null {
+  if (!data || typeof data !== 'object') return null;
+  const version = (data as ConnectionInfoResponse).ipVersion;
+  return version === 4 || version === 6 ? version : null;
+}
+
+async function loadConnectionInfo(): Promise<void> {
+  const [infoSettled, probeSettled] = await Promise.allSettled([
+    fetch('/api/connection-info'),
+    probeFamilies(),
+  ]);
+  if (infoSettled.status === 'rejected' || !infoSettled.value.ok) return;
+  let data: unknown;
+  try {
+    data = await infoSettled.value.json();
+  } catch {
+    return;
+  }
+  const ipVersion = readIpVersion(data);
+  const probe = probeSettled.status === 'fulfilled' ? probeSettled.value : null;
+  els.infoPath.textContent = ipVersion === null ? '--' : `IPv${ipVersion}`;
+  els.infoLineType.textContent = estimateConnection(
+    { ipVersion },
+    probe,
+  ).summaryJa;
+}
+
+void loadConnectionInfo();
